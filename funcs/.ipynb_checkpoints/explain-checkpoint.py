@@ -10,8 +10,30 @@ from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from fancyimpute import SoftImpute
 from scipy.stats import spearmanr, kendalltau
+# from .missingpy_git.missforest import MissForest 
+# import sys
+# sys.path.append('/content/GAIN')
 
-def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_model):
+# from gain import gain
+# from utils import binary_sampler, normalization, renormalization, rounding
+from .GAIN.gain import gain
+from .GAIN.utils import binary_sampler, normalization, renormalization, rounding
+
+def impute_gain(X, batch_size = 32, iterations = 300):
+    # Parameters
+    gain_parameters = {
+        'batch_size': batch_size,
+        'hint_rate': 0.8,
+        'alpha': 100,
+        'iterations': iterations
+    }
+    norm_data, norm_parameters = normalization(X)
+    imputed_data = gain(norm_data, gain_parameters)
+    imputed_data = renormalization(imputed_data, norm_parameters)
+    X_imputed = rounding(imputed_data, X)
+    return X_imputed
+
+def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_model, get_spearrman = True):
     
     ori_model = chosen_model
     ori_model.fit(X_train, y_train)
@@ -85,6 +107,18 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     explainer_soft = shap.Explainer(model_soft, X_test_soft)
     shap_values_soft = explainer_soft(X_test_soft)
     ypred_soft = model_soft.predict(X_test_soft)
+
+    # GAIN imputation 
+    imputed_gain = impute_gain(np.vstack((X_train_star, X_test_star)))
+    X_train_gain = imputed_gain[:len(X_train_star)]
+    X_test_gain = imputed_gain[len(X_train_star):]
+    X_train_gain = pd.DataFrame(X_train_gain, columns=X_train.columns)
+    X_test_gain = pd.DataFrame(X_test_gain, columns=X_train.columns)
+    model_gain = chosen_model
+    model_gain.fit(X_train_gain, y_train)
+    explainer_gain = shap.Explainer(model_gain, X_test_gain)
+    shap_values_gain = explainer_gain(X_test_gain)
+    ypred_gain = model_gain.predict(X_test_gain)
     
 # def mse_imputation(X_test_imputed):
 #     return np.mean((np.array(X_test_imputed)-np.array(X_test))**2)
@@ -94,34 +128,41 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     mse_imputation = lambda X_test_imputed: np.mean((np.array(X_test_imputed)-np.array(X_test))**2)
     mse_imputation_all = np.array([mse_imputation(X_test_mi), mse_imputation(X_test_mice),
                         mse_imputation(X_test_dimv), mse_imputation(X_test_mf),
-                        mse_imputation(X_test_soft)])
+                        mse_imputation(X_test_soft), mse_imputation(X_test_gain)])
 
     mse_shap = lambda computed_shap_values: np.mean((computed_shap_values - shap_values_ori.values)**2)
     mse_shap_all = np.array([mse_shap(shap_values_xm.values),mse_shap(shap_values_mi.values), mse_shap(shap_values_mice.values),
-                        mse_shap(shap_values_dimv.values), mse_shap(shap_values_mf.values), mse_shap(shap_values_soft.values)])
+                        mse_shap(shap_values_dimv.values), mse_shap(shap_values_mf.values), mse_shap(shap_values_soft.values),
+                            mse_shap(shap_values_gain.values)])
 
     mse_ypred = lambda ypred_method: np.mean((ypred_ori-ypred_method)**2)
     mse_ypred_all = np.array([mse_ypred(ypred_xm), mse_ypred(ypred_mi), mse_ypred(ypred_mice),
-                              mse_ypred(ypred_dimv), mse_ypred(ypred_mf), mse_ypred(ypred_soft)])
+                              mse_ypred(ypred_dimv), mse_ypred(ypred_mf), mse_ypred(ypred_soft), mse_ypred(ypred_gain)])
 
+    # mse_ypred_ytest = lambda ypred_method: np.mean((y_test-ypred_method)**2)
+    # mse_ypred_ytest_all = np.array([mse_ypred_ytest(ypred_ori), mse_ypred_ytest(ypred_xm), mse_ypred_ytest(ypred_mi), mse_ypred_ytest(ypred_mice),
+    #                           mse_ypred_ytest(ypred_dimv), mse_ypred_ytest(ypred_mf), mse_ypred_ytest(ypred_soft)])   
 
     # get the ranking correlation for spearman rank correlation between the predicted y on test set of original data and y predicted on imputed data
     cor_ypred = lambda ypred_method: spearmanr(ypred_ori, ypred_method)
     cor_ypred_all = np.array([cor_ypred(ypred_xm), cor_ypred(ypred_mi), cor_ypred(ypred_mice),
-                              cor_ypred(ypred_dimv), cor_ypred(ypred_mf), cor_ypred(ypred_soft)])
+                              cor_ypred(ypred_dimv), cor_ypred(ypred_mf), cor_ypred(ypred_soft), cor_ypred(ypred_gain)])
     
     # get the ranking correlation for each feature 
     get_spearmanr = lambda shap_vals_method: np.array([spearmanr(shap_values_ori.values[:,i], shap_vals_method.values[:,i])[0] 
                                                        for i in range(shap_values_ori.values.shape[1])])
-    spearman_res = np.array([get_spearmanr(shap_values_xm), get_spearmanr(shap_values_mi), get_spearmanr(shap_values_mice),
+    if get_spearrman:
+        spearman_res = np.array([get_spearmanr(shap_values_xm), get_spearmanr(shap_values_mi), get_spearmanr(shap_values_mice),
                              get_spearmanr(shap_values_dimv), get_spearmanr(shap_values_mf),
-                             get_spearmanr(shap_values_soft)])
-     
-    
+                             get_spearmanr(shap_values_soft), get_spearmanr(shap_values_gain)])
+        other_measures = [mse_imputation_all, mse_shap_all, mse_ypred_all, cor_ypred_all, spearman_res]
+    else:
+        other_measures = [mse_imputation_all, mse_shap_all, mse_ypred_all, cor_ypred_all]
+        
+       
     
     #get the ranking correlation for each feature 
-    shap_all = [shap_values_ori, shap_values_xm, shap_values_mi, shap_values_mice, shap_values_dimv, shap_values_mf, shap_values_soft]
-    other_measures = [mse_imputation_all, mse_shap_all, mse_ypred_all, cor_ypred_all, spearman_res]
+    shap_all = [shap_values_ori, shap_values_xm, shap_values_mi, shap_values_mice, shap_values_dimv, shap_values_mf, shap_values_soft, shap_values_gain]
 
     return  shap_all, other_measures
 

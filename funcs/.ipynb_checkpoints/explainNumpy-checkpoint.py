@@ -11,29 +11,11 @@ from sklearn.impute import IterativeImputer
 from fancyimpute import SoftImpute
 from scipy.stats import spearmanr, kendalltau
 # from .missingpy_git.missforest import MissForest 
-# import sys
-# sys.path.append('/content/GAIN')
 
-# from gain import gain
-# from utils import binary_sampler, normalization, renormalization, rounding
-from .GAIN.gain import gain
-from .GAIN.utils import binary_sampler, normalization, renormalization, rounding
+# THIS IS JUST LIKE THE EXPLAIN.PY NOTEBOOK, EXCEPT IT RUNS FOR NUMPY INPUT
+# HAVEN'T ADD GAIN IMPUTATION 
 
-def impute_gain(X, batch_size = 32, iterations = 300):
-    # Parameters
-    gain_parameters = {
-        'batch_size': batch_size,
-        'hint_rate': 0.8,
-        'alpha': 100,
-        'iterations': iterations
-    }
-    norm_data, norm_parameters = normalization(X)
-    imputed_data = gain(norm_data, gain_parameters)
-    imputed_data = renormalization(imputed_data, norm_parameters)
-    X_imputed = rounding(imputed_data, X)
-    return X_imputed
-
-def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_model, get_spearrman = True):
+def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_model):
     
     ori_model = chosen_model
     ori_model.fit(X_train, y_train)
@@ -50,8 +32,8 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     # impute X using mean imputation 
     X_train_mi = np.where(np.isnan(X_train_star), np.nanmean(X_train_star, axis=0), X_train_star)
     X_test_mi = np.where(np.isnan(X_test_star), np.nanmean(X_train_star, axis=0), X_test_star)
-    X_train_mi = pd.DataFrame(X_train_mi, columns=X_train.columns)
-    X_test_mi = pd.DataFrame(X_test_mi, columns=X_train.columns)
+    # X_train_mi = pd.DataFrame(X_train_mi, columns=X_train.columns)
+    # X_test_mi = pd.DataFrame(X_test_mi, columns=X_train.columns)
     model_mi = chosen_model
     model_mi.fit(X_train_mi, y_train)
     explainer_mi = shap.Explainer(model_mi, X_test_mi)
@@ -63,8 +45,8 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     imputer.fit(X_train_star)
     X_train_mice = imputer.transform(X_train_star)
     X_test_mice = imputer.transform(X_test_star)
-    X_train_mice = pd.DataFrame(X_train_mice, columns=X_train.columns)
-    X_test_mice = pd.DataFrame(X_test_mice, columns=X_train.columns)
+    # X_train_mice = pd.DataFrame(X_train_mice, columns=X_train.columns)
+    # X_test_mice = pd.DataFrame(X_test_mice, columns=X_train.columns)
     model_mice = chosen_model
     model_mice.fit(X_train_mice, y_train)
     explainer_mice = shap.Explainer(model_mice, X_test_mice)
@@ -77,8 +59,8 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     imputer.fit(X_train_star_np, initializing=False)
     X_train_dimv = imputer.transform(X_train_star_np)
     X_test_dimv = imputer.transform(X_test_star_np)
-    X_train_dimv = pd.DataFrame(X_train_dimv, columns=X_train.columns)
-    X_test_dimv = pd.DataFrame(X_test_dimv, columns=X_train.columns)
+    # X_train_dimv = pd.DataFrame(X_train_dimv, columns=X_train.columns)
+    # X_test_dimv = pd.DataFrame(X_test_dimv, columns=X_train.columns)
     model_dimv = chosen_model
     model_dimv.fit(X_train_dimv, y_train)
     explainer_dimv = shap.Explainer(model_dimv, X_test_dimv)
@@ -89,8 +71,8 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     # mf = MissForest().fit_transform
     X_train_mf = mf(np.array(X_train_star))
     X_test_mf = mf(np.vstack((X_train_star, X_test_star)))[-len(X_test_star):]
-    X_train_mf = pd.DataFrame(X_train_mf, columns=X_train.columns)
-    X_test_mf = pd.DataFrame(X_test_mf, columns=X_train.columns)
+    # X_train_mf = pd.DataFrame(X_train_mf, columns=X_train.columns)
+    # X_test_mf = pd.DataFrame(X_test_mf, columns=X_train.columns)
     model_mf = chosen_model
     model_mf.fit(X_train_mf, y_train)
     explainer_mf = shap.Explainer(model_mf, X_test_mf)
@@ -100,25 +82,13 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     # SoftImpute
     X_train_soft = SoftImpute(verbose = False).fit_transform(X_train_star)
     X_test_soft = SoftImpute(verbose = False).fit_transform(np.vstack((X_train_star, X_test_star)))[-len(X_test_star):]
-    X_train_soft = pd.DataFrame(X_train_soft, columns=X_train.columns)
-    X_test_soft = pd.DataFrame(X_test_soft, columns=X_train.columns)
+    # X_train_soft = pd.DataFrame(X_train_soft, columns=X_train.columns)
+    # X_test_soft = pd.DataFrame(X_test_soft, columns=X_train.columns)
     model_soft = chosen_model
     model_soft.fit(X_train_soft, y_train)
     explainer_soft = shap.Explainer(model_soft, X_test_soft)
     shap_values_soft = explainer_soft(X_test_soft)
     ypred_soft = model_soft.predict(X_test_soft)
-
-    # GAIN imputation 
-    imputed_gain = impute_gain(np.vstack((X_train_star, X_test_star)))
-    X_train_gain = imputed_gain[:len(X_train_star)]
-    X_test_gain = imputed_gain[len(X_train_star):]
-    X_train_gain = pd.DataFrame(X_train_gain, columns=X_train.columns)
-    X_test_gain = pd.DataFrame(X_test_gain, columns=X_train.columns)
-    model_gain = chosen_model
-    model_gain.fit(X_train_gain, y_train)
-    explainer_gain = shap.Explainer(model_gain, X_test_gain)
-    shap_values_gain = explainer_gain(X_test_gain)
-    ypred_gain = model_gain.predict(X_test_gain)
     
 # def mse_imputation(X_test_imputed):
 #     return np.mean((np.array(X_test_imputed)-np.array(X_test))**2)
@@ -128,16 +98,15 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     mse_imputation = lambda X_test_imputed: np.mean((np.array(X_test_imputed)-np.array(X_test))**2)
     mse_imputation_all = np.array([mse_imputation(X_test_mi), mse_imputation(X_test_mice),
                         mse_imputation(X_test_dimv), mse_imputation(X_test_mf),
-                        mse_imputation(X_test_soft), mse_imputation(X_test_gain)])
+                        mse_imputation(X_test_soft)])
 
     mse_shap = lambda computed_shap_values: np.mean((computed_shap_values - shap_values_ori.values)**2)
     mse_shap_all = np.array([mse_shap(shap_values_xm.values),mse_shap(shap_values_mi.values), mse_shap(shap_values_mice.values),
-                        mse_shap(shap_values_dimv.values), mse_shap(shap_values_mf.values), mse_shap(shap_values_soft.values),
-                            mse_shap(shap_values_gain.values)])
+                        mse_shap(shap_values_dimv.values), mse_shap(shap_values_mf.values), mse_shap(shap_values_soft.values)])
 
     mse_ypred = lambda ypred_method: np.mean((ypred_ori-ypred_method)**2)
     mse_ypred_all = np.array([mse_ypred(ypred_xm), mse_ypred(ypred_mi), mse_ypred(ypred_mice),
-                              mse_ypred(ypred_dimv), mse_ypred(ypred_mf), mse_ypred(ypred_soft), mse_ypred(ypred_gain)])
+                              mse_ypred(ypred_dimv), mse_ypred(ypred_mf), mse_ypred(ypred_soft)])
 
     # mse_ypred_ytest = lambda ypred_method: np.mean((y_test-ypred_method)**2)
     # mse_ypred_ytest_all = np.array([mse_ypred_ytest(ypred_ori), mse_ypred_ytest(ypred_xm), mse_ypred_ytest(ypred_mi), mse_ypred_ytest(ypred_mice),
@@ -146,23 +115,20 @@ def one_run(X_train, X_train_star, y_train, X_test, X_test_star, y_test, chosen_
     # get the ranking correlation for spearman rank correlation between the predicted y on test set of original data and y predicted on imputed data
     cor_ypred = lambda ypred_method: spearmanr(ypred_ori, ypred_method)
     cor_ypred_all = np.array([cor_ypred(ypred_xm), cor_ypred(ypred_mi), cor_ypred(ypred_mice),
-                              cor_ypred(ypred_dimv), cor_ypred(ypred_mf), cor_ypred(ypred_soft), cor_ypred(ypred_gain)])
+                              cor_ypred(ypred_dimv), cor_ypred(ypred_mf), cor_ypred(ypred_soft)])
     
     # get the ranking correlation for each feature 
     get_spearmanr = lambda shap_vals_method: np.array([spearmanr(shap_values_ori.values[:,i], shap_vals_method.values[:,i])[0] 
                                                        for i in range(shap_values_ori.values.shape[1])])
-    if get_spearrman:
-        spearman_res = np.array([get_spearmanr(shap_values_xm), get_spearmanr(shap_values_mi), get_spearmanr(shap_values_mice),
+    spearman_res = np.array([get_spearmanr(shap_values_xm), get_spearmanr(shap_values_mi), get_spearmanr(shap_values_mice),
                              get_spearmanr(shap_values_dimv), get_spearmanr(shap_values_mf),
-                             get_spearmanr(shap_values_soft), get_spearmanr(shap_values_gain)])
-        other_measures = [mse_imputation_all, mse_shap_all, mse_ypred_all, cor_ypred_all, spearman_res]
-    else:
-        other_measures = [mse_imputation_all, mse_shap_all, mse_ypred_all, cor_ypred_all]
-        
-       
+                             get_spearmanr(shap_values_soft)])
+     
+    
     
     #get the ranking correlation for each feature 
-    shap_all = [shap_values_ori, shap_values_xm, shap_values_mi, shap_values_mice, shap_values_dimv, shap_values_mf, shap_values_soft, shap_values_gain]
+    shap_all = [shap_values_ori, shap_values_xm, shap_values_mi, shap_values_mice, shap_values_dimv, shap_values_mf, shap_values_soft]
+    other_measures = [mse_imputation_all, mse_shap_all, mse_ypred_all, cor_ypred_all, spearman_res]
 
     return  shap_all, other_measures
 
